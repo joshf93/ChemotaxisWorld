@@ -18,7 +18,7 @@ public:
   //Speed cannot be zero; it is the denominator calculating dy in the position function
   bool use_lin_gradient = true;
   double speed = 1;
-  double slope = 0.1; //Slope is "m" for if linear, "k" if exponential.
+  double slope = 0.1; //Slope is "m" if linear, "k" if exponential.
   double base = 1 //Starting concentration
   int eval_ticks = 5000;
 
