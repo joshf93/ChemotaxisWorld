@@ -1,5 +1,7 @@
 #ifndef __BasicMarkovBrainTemplate__Chemotaxis
 #define __BasicMarkovBrainTemplate__Chemotaxis
+#define _USE_MATH_DEFINES //I think this is okay; but if things start acting weird look here. Maybe needs
+//its own header guard?
 
 #include <vector>
 #include <string>
@@ -8,11 +10,10 @@
 #include <memory>
 #include <cstdint>
 #include <cmath>
-#include <bitset>
 
 class Chemotaxis: public AbstractWorld {
 public:
-  virtual void runWorldSolo(shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) override;
+  virtual void runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) override;
 
   //Speed cannot be zero; it is the denominator calculating dy in the position function
   bool use_lin_gradient = true;
@@ -28,5 +29,3 @@ virtual int maxOrgsAllowed() override;
 virtual int minOrgsAllowed() override;
 
 };
-#ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
