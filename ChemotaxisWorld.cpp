@@ -5,13 +5,12 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) :
   AbstractWorld(_PT) {
 aveFileColumns.clear();
 aveFileColumns.push_back("x_displacement");
-
 }
 
 //Should return a linear concentration unless it's negative, in which case return 0.
 //Will not attempt to convert negative value, and will return 0 instead.
 inline uint32_t get_conc_linear(const double &x, const double &slope, const double &base){
-    double conc = x * slope;
+    double conc = (x * slope) + base;
   return ((conc > 0) ? conc : 0);
 }
 
@@ -36,6 +35,12 @@ inline void run(std::vector<double> &pos_vec){
 //Potentially add in ability to bias later.
 inline double tumble(){
   return (Random::getDouble(2 * M_PI));
+}
+
+//Causes random changes in theta which depend on the diffusion coefficient.
+inline void rot_diffuse(double& theta, const double diff_coeff){
+  theta += (Random::getNormal(0,1) * diff_coeff);
+  return;
 }
 
 //Take a vector of bits and convert it into a probability of tumbling.
@@ -118,26 +123,23 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       pos_vec[2] = tumble();
       pos_hist.push_back(pos_vec);
     }
-    else{
+    else{ //Running
       run(pos_vec);
       pos_hist.push_back(pos_vec);
+      rot_diffuse(pos_vec[2], rot_diff_coeff);
     }
   }
 
 
   //Output some info
-  if (pos_vec[0] < 0.0){
-    org->score = 0;
-    org->dataMap.Append("x_displacement", 0);
-  }
-  else{
-    org->score = pos_vec[0];
-    org->dataMap.Append("x_displacement", pos_vec[0]);
-  }
-
-
-
-
+  org->score = pos_vec[0];
+  /* This isn't working correctly.
+  std::stringstream strstrm;
+  for(auto n : pos_hist){
+    strstrm << "(" << n[0] << "," << n[1] << "),";
+  } */
+  org->dataMap.Append("x_displacement", pos_vec[0]);
+  //org->dataMap.Append("pos_his", strstrm.str());
 
 }
 

@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cmath>
+#include <sstream>
 
 class ChemotaxisWorld: public AbstractWorld {
 
@@ -23,10 +24,11 @@ public:
 
   bool use_lin_gradient = true;
   bool clear_outputs = true;
+  double rot_diff_coeff = 0.016;
   double speed = 1.0;
-  double slope = 1; //Slope is "m" if linear, "k" if exponential.
-  double base = 1; //Starting concentration
-  int eval_ticks = 1000;
+  double slope = 10; //Slope is "m" if linear, "k" if exponential.
+  double base = 255; //Starting concentration
+  int eval_ticks = 5000;
 
 
 
