@@ -84,6 +84,11 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   double tumble_bias;
   uint32_t concentration = 0;
 
+  //Data visualization variables
+  std::ostringstream str_buffer;
+  std::ofstream out_file("chemotaxis_visualization_data.txt", std::ofstream::app);
+
+
   //Evaluate the organism for eval_ticks ticks.
   for(int t = 0; t != eval_ticks; ++t){
     //Update the brain first.
@@ -128,20 +133,39 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       pos_hist.push_back(pos_vec);
       rot_diffuse(pos_vec[2], rot_diff_coeff);
     }
-  }
+  }//end eval loop
 
 
   //Output some info
   org->score = pos_vec[0];
-  /* This isn't working correctly.
-  std::stringstream strstrm;
-  for(auto n : pos_hist){
-    strstrm << "(" << n[0] << "," << n[1] << "),";
-  } */
-  org->dataMap.Append("x_displacement", pos_vec[0]);
-  //org->dataMap.Append("pos_his", strstrm.str());
 
-}
+  //If in visualize mode, dump the points to file.
+
+  if (visualize){
+    for (auto sample : pos_hist){
+      str_buffer << sample[0] << "," << sample[1] << "," << sample[2] << "," << '\n';
+    }
+    out_file << str_buffer.rdbuf()->str() << std::endl;
+  }
+
+  //This isn't working correctly?
+  /*
+  std::string holding_str;
+  for(auto n : pos_hist){
+    holding_str += "(";
+    holding_str += n[0];
+    holding_str += ",";
+    holding_str += n[1];
+    holding_str += ",";
+    holding_str += n[2];
+    holding_str += ") ";
+  }*/
+  org->dataMap.Append("x_displacement", pos_vec[0]);
+  org->dataMap.Append("y_displacement", pos_vec[1]);
+  //org->dataMap.Append("Pos_history", holding_str);
+
+
+}//End of RunWorldSolo fn
 
 
 //This will vary depending on what, exactly, the sensor is reading, and how it is being read.

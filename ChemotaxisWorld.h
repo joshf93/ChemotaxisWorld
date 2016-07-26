@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cmath>
+#include <fstream>
 #include <sstream>
 
 class ChemotaxisWorld: public AbstractWorld {
