@@ -147,8 +147,10 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     }
   }//end eval loop
 
-  //Score based on x movement
+  //Score based on x movement and record some stats.
   org->score = pos_vec[0];
+  org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
+  org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
 
   //If in visualize mode, dump the points to file.
   if (visualize){
@@ -171,10 +173,6 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     }
     out_file_conc << std::endl;
   }//End visualize
-
-  org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
-  org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
-
 }//End of RunWorldSolo fn
 
 //This will vary depending on what, exactly, the sensor is reading, and how it is being read.
