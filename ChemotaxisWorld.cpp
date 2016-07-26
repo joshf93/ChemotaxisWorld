@@ -9,7 +9,7 @@ std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::r
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-base", 255.0, "Base concentration at x = 0.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
 
-ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) :
+ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initializer
   AbstractWorld(_PT) {
     //Grab the values from the parameter list.
     use_lin_gradient = (PT == nullptr) ? use_lin_gradient_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-use_lin_gradient");
@@ -18,7 +18,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) :
     speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
-    eval_ticks = (PT==nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
+    eval_ticks = (PT == nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
 
     //Set up data columns.
     aveFileColumns.clear();
@@ -40,8 +40,8 @@ inline uint32_t get_conc_exp(const double &x, const double &k, const double &bas
   return ((conc > 0) ? conc : 0);
 }
 
-//Use the cell's x position, y position, angle theta, and the cell's
-//speed to calculate the new position. Void because it works directly on the vector by ref.
+//Use the cell's x position, y position, angle theta, and the cell's speed
+//to calculate the new position. Void because it works directly on the vector by ref.
 //pos_vec has the form [x,y,theta,speed]
 inline void run(std::vector<double> &pos_vec){
   pos_vec[0] += (pos_vec[3] * cos(pos_vec[2]));
@@ -83,13 +83,13 @@ inline int is_set(const uint32_t &num, const int &idx){
 void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug){
   //Starting orientation should be random.
   //Also starts the organism on the origin for now.
-  std::vector<double> pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};  //Make this an option later?
+  std::vector<double> pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};
   std::vector<std::vector<double>> pos_hist;
   std::vector<double> tumble_hist;
   std::vector<double> concentration_hist;
   bool output_array[8];
 
-  //Pre-reserve to prevent reallocations.
+  //Pre-reserve capacity to prevent reallocations.
   pos_hist.reserve(eval_ticks+1);
   tumble_hist.reserve(eval_ticks+1);
   concentration_hist.reserve(eval_ticks+1);
@@ -111,12 +111,9 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       concentration_hist.push_back(concentration);
     }
 
-    //Put info into the brain.
-    int brain_idx = 0;
     //Go through and send each bit in concentration to the brain input.
-    while(brain_idx != 32){
+    for(int brain_idx = 0; brain_idx != 32; ++brain_idx){
       org->brain->setInput(brain_idx,is_set(concentration,brain_idx));
-      ++brain_idx;
     }
 
     //Update the brain after resetting outputs (if enabled)
@@ -134,13 +131,13 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     tumble_bias = bit_to_prob(output_array);
     tumble_hist.push_back(tumble_bias);
 
-    //Do the running and tumbling.
+    //Do the tumbling.
     is_tumbling = Random::P(tumble_bias);
     if (is_tumbling){
       pos_vec[2] = tumble();
       pos_hist.push_back(pos_vec);
     }
-    else{ //Running
+    else{ //And running
       run(pos_vec);
       pos_hist.push_back(pos_vec);
       rot_diffuse(pos_vec[2], rot_diff_coeff);
@@ -175,8 +172,8 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   }//End visualize
 }//End of RunWorldSolo fn
 
-//This will vary depending on what, exactly, the sensor is reading, and how it is being read.
-//For noww32 bit gradient; "concentration" values will range from 0 to (2^32)-1.
+//This will vary depending on what the sensor is reading, and how it is being read.
+//For now it is a 32 bit gradient; "concentration" values will range from 0 to (2^32)-1.
 //Maybe set inputs and outputs to be user modified at a later point. For now, leave them fixed.
 int ChemotaxisWorld::requiredInputs() {
   return 32;
