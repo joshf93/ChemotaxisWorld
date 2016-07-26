@@ -23,13 +23,24 @@ public:
   virtual void runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) override;
 
 
-  bool use_lin_gradient = true;
-  bool clear_outputs = true;
-  double rot_diff_coeff = 0.016;
-  double speed = 1.0;
-  double slope = 10; //Slope is "m" if linear, "k" if exponential.
-  double base = 255; //Starting concentration
-  int eval_ticks = 5000;
+  static std::shared_ptr<ParameterLink<bool>> use_lin_gradient_pl;
+  static std::shared_ptr<ParameterLink<bool>> clear_outputs_pl;
+  static std::shared_ptr<ParameterLink<double>> rot_diff_coeff_pl;
+  static std::shared_ptr<ParameterLink<double>> speed_pl;
+  static std::shared_ptr<ParameterLink<double>> slope_pl;
+  static std::shared_ptr<ParameterLink<double>> base_pl;
+  static std::shared_ptr<ParameterLink<int>> eval_ticks_pl;
+
+
+
+
+  bool use_lin_gradient;
+  bool clear_outputs;
+  double rot_diff_coeff;
+  double speed;
+  double slope; //Slope is "m" if linear, "k" if exponential.
+  double base; //Starting concentration
+  int eval_ticks;
 
 
 

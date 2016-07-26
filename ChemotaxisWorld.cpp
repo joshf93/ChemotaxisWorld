@@ -1,10 +1,33 @@
 #include "ChemotaxisWorld.h"
 //This comment is to test git 2.
 
+//Initialize the parameter list.
+std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::use_lin_gradient_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-use_lin_gradient", true, "Create a linear attractant gradient. Otherwise, it will be exponential.");
+std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::clear_outputs_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-clear_outputs", true, "Reset output nodes between brain updates.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::rot_diff_coeff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-rot_diff_coeff", 0.016, "Rotational diffusion constant.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-speed", 1.0, "Magnitude of cell movement per tick.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-slope", 10.0, "Rate of gradient increase. m if linear, k if exponential.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-base", 255.0, "Base concentration at x = 0.");
+std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
+
+
+
 ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) :
   AbstractWorld(_PT) {
-aveFileColumns.clear();
-aveFileColumns.push_back("x_displacement");
+
+    //Grab the values from the parameter list.
+    use_lin_gradient = (PT == nullptr) ? use_lin_gradient_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-use_lin_gradient");
+    clear_outputs = (PT == nullptr) ? clear_outputs_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-clear_outputs");
+    rot_diff_coeff = (PT == nullptr) ? rot_diff_coeff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
+    speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
+    slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
+    base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
+    eval_ticks = (PT==nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
+
+    //Set up data columns.
+    aveFileColumns.clear();
+    aveFileColumns.push_back("x_displacement");
+    aveFileColumns.push_back("y_displacement");
 }
 
 //Should return a linear concentration unless it's negative, in which case return 0.
@@ -82,11 +105,12 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Initialize the cell.
   bool is_tumbling;
   double tumble_bias;
-  uint32_t concentration = 0;
+  uint32_t concentration;
 
   //Data visualization variables
+  /*
   std::ostringstream str_buffer;
-  std::ofstream out_file("chemotaxis_visualization_data.txt", std::ofstream::app);
+  std::ofstream out_file("chemotaxis_visualization_data.txt", std::ofstream::app);*/
 
 
   //Evaluate the organism for eval_ticks ticks.
@@ -136,17 +160,18 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   }//end eval loop
 
 
-  //Output some info
+  //Score based on x movement
   org->score = pos_vec[0];
 
   //If in visualize mode, dump the points to file.
-
+  /*
   if (visualize){
     for (auto sample : pos_hist){
       str_buffer << sample[0] << "," << sample[1] << "," << sample[2] << "," << '\n';
     }
     out_file << str_buffer.rdbuf()->str() << std::endl;
   }
+  */
 
   //This isn't working correctly?
   /*
@@ -160,8 +185,10 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     holding_str += n[2];
     holding_str += ") ";
   }*/
-  org->dataMap.Append("x_displacement", pos_vec[0]);
-  org->dataMap.Append("y_displacement", pos_vec[1]);
+  //Write some stats
+  org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
+  org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
+
   //org->dataMap.Append("Pos_history", holding_str);
 
 
