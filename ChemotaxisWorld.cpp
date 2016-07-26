@@ -1,5 +1,4 @@
 #include "ChemotaxisWorld.h"
-//This comment is to test git 2.
 
 //Initialize the parameter list.
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::use_lin_gradient_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-use_lin_gradient", true, "Create a linear attractant gradient. Otherwise, it will be exponential.");
@@ -10,11 +9,8 @@ std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::r
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-base", 255.0, "Base concentration at x = 0.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
 
-
-
 ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) :
   AbstractWorld(_PT) {
-
     //Grab the values from the parameter list.
     use_lin_gradient = (PT == nullptr) ? use_lin_gradient_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-use_lin_gradient");
     clear_outputs = (PT == nullptr) ? clear_outputs_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-clear_outputs");
@@ -47,7 +43,6 @@ inline uint32_t get_conc_exp(const double &x, const double &k, const double &bas
 //Use the cell's x position, y position, angle theta, and the cell's
 //speed to calculate the new position. Void because it works directly on the vector by ref.
 //pos_vec has the form [x,y,theta,speed]
-//Put the rotational diffusion here?
 inline void run(std::vector<double> &pos_vec){
   pos_vec[0] += (pos_vec[3] * cos(pos_vec[2]));
   pos_vec[1] += (pos_vec[3] * sin(pos_vec[2]));
@@ -61,18 +56,17 @@ inline double tumble(){
 }
 
 //Causes random changes in theta which depend on the diffusion coefficient.
-inline void rot_diffuse(double& theta, const double diff_coeff){
+inline void rot_diffuse(double& theta, const double &diff_coeff){
   theta += (Random::getNormal(0,1) * diff_coeff);
   return;
 }
 
 //Take a vector of bits and convert it into a probability of tumbling.
-//The "endianness" of how the brain gives back outputs shouldn't matter.
+//The endianness of how the brain returns outputs shouldn't matter.
 //The organism will 'learn' it. Will only take 8 bits for now; make generic size if needed.
 //Takes vector of ints, which should be 1 or 0, multiply each position by 2**n and add
 //the result to an accumulator to convert to int. Then take accumulator+1 (so bias can't be 0)
-//and divide by 256 to get the resulting tumble bias. If somehow this a bottleneck,
-//convert pow(2,idx) to left shifts.
+//and divide by 256 to get the resulting tumble bias.
 double bit_to_prob(const bool (&bit_arr)[8]){
   int accumulator = 0;
   for(int idx = 0; idx != 8; ++idx){
@@ -81,24 +75,19 @@ double bit_to_prob(const bool (&bit_arr)[8]){
   return ((accumulator+1)/256);
 }
 
-//Calculate total displacement, x displacement, etc. stats for analyzing organism
-//After it has completed evaluation.
-//Return vector format: [overall_displacement, x_displacement, ]
-//vector<double> end_stats(const std::vector<double> &pos_vec){}
-
-//Determine whether the nth bit of an uint32_t is set. Will fail if idx > 31.
+//Determine whether the nth bit of an uint32_t is 1. Will fail if idx > 31.
 inline int is_set(const uint32_t &num, const int &idx){
   return ((num & (1 << idx)) >> idx);
 }
 
-
 void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug){
-  //Starting orientation should be random. Make it an option later.
-  //Also starts the organism on the origin for now. Make it an option later?
+  //Starting orientation should be random.
+  //Also starts the organism on the origin for now.
   std::vector<double> pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};  //Make this an option later?
   std::vector<std::vector<double>> pos_hist;
   std::vector<double> tumble_hist;
   std::vector<double> concentration_hist;
+  bool output_array[8];
 
   //Pre-reserve to prevent reallocations.
   pos_hist.reserve(eval_ticks+1);
@@ -110,15 +99,9 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   double tumble_bias;
   uint32_t concentration;
 
-  //Data visualization variables
-  /*
-  std::ostringstream str_buffer;
-  */
-
-
   //Evaluate the organism for eval_ticks ticks.
   for(int t = 0; t != eval_ticks; ++t){
-    //Update the brain first.
+    //Get concentration at location.
     if(use_lin_gradient){
       concentration = get_conc_linear(pos_vec[0], slope, base);
       concentration_hist.push_back(concentration);
@@ -128,7 +111,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       concentration_hist.push_back(concentration);
     }
 
-    //Our brain position index for the tick.
+    //Put info into the brain.
     int brain_idx = 0;
     //Go through and send each bit in concentration to the brain input.
     while(brain_idx != 32){
@@ -136,16 +119,15 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       ++brain_idx;
     }
 
-    //Update the brain after clearing outputs (if enabled)
+    //Update the brain after resetting outputs (if enabled)
     if (clear_outputs){
       org->brain->resetOutputs();
     }
     org->brain->update();
 
     //Read the output and convert to tumble bias.
-    //Will involve a array of 'bits', convert to int, divide (resulting ulong +1) by 256.
+    //Take an array of 'bits', convert to int, divide (resulting ulong +1) by 256.
     //+1 to prevent tumble bias from ever being 0 ((0+1)/256 != 0).
-    bool output_array[8];
     for (int n = 0; n != 8; ++n){
       output_array[n] = org->brain->readOutput(n);
     }
@@ -190,30 +172,29 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     out_file_conc << std::endl;
   }//End visualize
 
-
   org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
   org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
 
-
 }//End of RunWorldSolo fn
 
-
 //This will vary depending on what, exactly, the sensor is reading, and how it is being read.
-//For now, let's just go with a 32 bit gradient; "concentration" values will range from 0 to (2^32)-1.
+//For noww32 bit gradient; "concentration" values will range from 0 to (2^32)-1.
 //Maybe set inputs and outputs to be user modified at a later point. For now, leave them fixed.
 int ChemotaxisWorld::requiredInputs() {
   return 32;
 }
 
-//Only affects tumble bias. Very initial value: 8 bits; tumble bias will range from 1/256 to 256/256;
+//Only affects tumble bias. 8 bits; tumble bias will range from 1/256 to 256/256;
 int ChemotaxisWorld::requiredOutputs() {
   return 8;
 }
 
+//Solo eval. No reason to run more than once.
 int ChemotaxisWorld::maxOrgsAllowed() {
   return 1;
 }
 
+//Obviously need at least one organism.
 int ChemotaxisWorld::minOrgsAllowed() {
   return 1;
 }
