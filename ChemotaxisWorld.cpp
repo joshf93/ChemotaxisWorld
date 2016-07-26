@@ -28,14 +28,14 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
 
 //Should return a linear concentration unless it's negative, in which case return 0.
 //Will not attempt to convert negative value, and will return 0 instead.
-inline uint32_t get_conc_linear(const double &x, const double &slope, const double &base){
+inline uint32_t get_conc_linear(const double &x, const double &slope, const double &base) {
     double conc = (x * slope) + base;
   return ((conc > 0) ? conc : 0);
 }
 
 //Should return an exponential concentration, unless it's negative, in which case return 0.
 //Will not attempt to convert negative value, and will return 0 instead.
-inline uint32_t get_conc_exp(const double &x, const double &k, const double &base){
+inline uint32_t get_conc_exp(const double &x, const double &k, const double &base) {
   double conc = exp(k * x) + base;
   return ((conc > 0) ? conc : 0);
 }
@@ -43,7 +43,7 @@ inline uint32_t get_conc_exp(const double &x, const double &k, const double &bas
 //Use the cell's x position, y position, angle theta, and the cell's speed
 //to calculate the new position. Void because it works directly on the vector by ref.
 //pos_vec has the form [x,y,theta,speed]
-inline void run(std::vector<double> &pos_vec){
+inline void run(std::vector<double> &pos_vec) {
   pos_vec[0] += (pos_vec[3] * cos(pos_vec[2]));
   pos_vec[1] += (pos_vec[3] * sin(pos_vec[2]));
   return;
@@ -51,12 +51,12 @@ inline void run(std::vector<double> &pos_vec){
 
 //The cell tumbles; resulting in a new theta between 0 and 2*pi
 //Potentially add in ability to bias later.
-inline double tumble(){
+inline double tumble() {
   return (Random::getDouble(2 * M_PI));
 }
 
 //Causes random changes in theta which depend on the diffusion coefficient.
-inline void rot_diffuse(double& theta, const double &diff_coeff){
+inline void rot_diffuse(double& theta, const double &diff_coeff) {
   theta += (Random::getNormal(0,1) * diff_coeff);
   return;
 }
@@ -67,8 +67,8 @@ inline void rot_diffuse(double& theta, const double &diff_coeff){
 //Takes vector of ints, which should be 1 or 0, multiply each position by 2**n and add
 //the result to an accumulator to convert to int. Then take accumulator+1 (so bias can't be 0)
 //and divide by 256 to get the resulting tumble bias.
-double bit_to_prob(const bool (&bit_arr)[8]){
-  int accumulator = 0;
+double bit_to_prob(const bool (&bit_arr)[8]) {
+  double accumulator = 0;
   for(int idx = 0; idx != 8; ++idx){
     accumulator += (bit_arr[idx]*(1 << idx));
   }
@@ -80,8 +80,9 @@ inline int is_set(const uint32_t &num, const int &idx){
   return ((num & (1 << idx)) >> idx);
 }
 
-void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug){
-  //Starting orientation should be random.
+void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) {
+  //Should be able to thread and run concurrently at the loss of reproducibility.
+  //Starting orientation is random between 0 and 2pi.
   //Also starts the organism on the origin for now.
   std::vector<double> pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};
   std::vector<std::vector<double>> pos_hist;
@@ -100,7 +101,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   uint32_t concentration;
 
   //Evaluate the organism for eval_ticks ticks.
-  for(int t = 0; t != eval_ticks; ++t){
+  for (int t = 0; t != eval_ticks; ++t){
     //Get concentration at location.
     if(use_lin_gradient){
       concentration = get_conc_linear(pos_vec[0], slope, base);
@@ -112,7 +113,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     }
 
     //Go through and send each bit in concentration to the brain input.
-    for(int brain_idx = 0; brain_idx != 32; ++brain_idx){
+    for (int brain_idx = 0; brain_idx != 32; ++brain_idx){
       org->brain->setInput(brain_idx,is_set(concentration,brain_idx));
     }
 
