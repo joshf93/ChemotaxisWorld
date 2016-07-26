@@ -73,10 +73,10 @@ inline void rot_diffuse(double& theta, const double diff_coeff){
 //the result to an accumulator to convert to int. Then take accumulator+1 (so bias can't be 0)
 //and divide by 256 to get the resulting tumble bias. If somehow this a bottleneck,
 //convert pow(2,idx) to left shifts.
-double bit_to_prob(const std::vector<bool> &bit_vec){
-  double accumulator = 0.0;
+double bit_to_prob(const bool (&bit_arr)[8]){
+  int accumulator = 0;
   for(int idx = 0; idx != 8; ++idx){
-    accumulator += (bit_vec[idx]*pow(2,idx));
+    accumulator += (bit_arr[idx]*(1 << idx));
   }
   return ((accumulator+1)/256);
 }
@@ -88,10 +88,6 @@ double bit_to_prob(const std::vector<bool> &bit_vec){
 
 //Determine whether the nth bit of an uint32_t is set. Will fail if idx > 31.
 inline int is_set(const uint32_t &num, const int &idx){
-  if(idx == 32){
-    std::cout << "Attempted to shift left by more than 31 while calculating brain input." << std::endl;
-    exit(1);
-  }
   return ((num & (1 << idx)) >> idx);
 }
 
@@ -101,6 +97,13 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Also starts the organism on the origin for now. Make it an option later?
   std::vector<double> pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};  //Make this an option later?
   std::vector<std::vector<double>> pos_hist;
+  std::vector<double> tumble_hist;
+  std::vector<double> concentration_hist;
+
+  //Pre-reserve to prevent reallocations.
+  pos_hist.reserve(eval_ticks+1);
+  tumble_hist.reserve(eval_ticks+1);
+  concentration_hist.reserve(eval_ticks+1);
 
   //Initialize the cell.
   bool is_tumbling;
@@ -110,7 +113,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Data visualization variables
   /*
   std::ostringstream str_buffer;
-  std::ofstream out_file("chemotaxis_visualization_data.txt", std::ofstream::app);*/
+  */
 
 
   //Evaluate the organism for eval_ticks ticks.
@@ -118,9 +121,11 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     //Update the brain first.
     if(use_lin_gradient){
       concentration = get_conc_linear(pos_vec[0], slope, base);
+      concentration_hist.push_back(concentration);
     }
     else{
       concentration = get_conc_exp(pos_vec[0], slope, base);
+      concentration_hist.push_back(concentration);
     }
 
     //Our brain position index for the tick.
@@ -138,13 +143,14 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     org->brain->update();
 
     //Read the output and convert to tumble bias.
-    //Will involve a vector of 'bits' (really ints), convert to ulong, divide (resulting ulong +1) by 256.
+    //Will involve a array of 'bits', convert to int, divide (resulting ulong +1) by 256.
     //+1 to prevent tumble bias from ever being 0 ((0+1)/256 != 0).
-    std::vector<bool> output_vector;
+    bool output_array[8];
     for (int n = 0; n != 8; ++n){
-      output_vector.push_back(org->brain->readOutput(n));
+      output_array[n] = org->brain->readOutput(n);
     }
-    tumble_bias = bit_to_prob(output_vector);
+    tumble_bias = bit_to_prob(output_array);
+    tumble_hist.push_back(tumble_bias);
 
     //Do the running and tumbling.
     is_tumbling = Random::P(tumble_bias);
@@ -159,37 +165,34 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     }
   }//end eval loop
 
-
   //Score based on x movement
   org->score = pos_vec[0];
 
   //If in visualize mode, dump the points to file.
-  /*
   if (visualize){
+    //Position data
+    std::ofstream out_file("chemotaxis_position_visualization_data.csv");
     for (auto sample : pos_hist){
-      str_buffer << sample[0] << "," << sample[1] << "," << sample[2] << "," << '\n';
+      out_file << sample[0] << "," << sample[1] << "," << sample[2] << "," << '\n';
     }
-    out_file << str_buffer.rdbuf()->str() << std::endl;
-  }
-  */
+    out_file << std::endl;
+    //Tumble data
+    std::ofstream out_file_tumble("chemotaxis_tumble_visualization_data.csv");
+    for (auto sample : tumble_hist){
+      out_file_tumble << sample << '\n';
+    }
+    out_file_tumble << std::endl;
+    //Concentration data
+    std::ofstream out_file_conc("chemotaxis_conc_visualization_data.csv");
+    for (auto sample : concentration_hist){
+      out_file_conc << sample << '\n';
+    }
+    out_file_conc << std::endl;
+  }//End visualize
 
-  //This isn't working correctly?
-  /*
-  std::string holding_str;
-  for(auto n : pos_hist){
-    holding_str += "(";
-    holding_str += n[0];
-    holding_str += ",";
-    holding_str += n[1];
-    holding_str += ",";
-    holding_str += n[2];
-    holding_str += ") ";
-  }*/
-  //Write some stats
+
   org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
   org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
-
-  //org->dataMap.Append("Pos_history", holding_str);
 
 
 }//End of RunWorldSolo fn
