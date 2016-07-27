@@ -3,22 +3,34 @@
 //Initialize the parameter list.
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::use_lin_gradient_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-use_lin_gradient", true, "Create a linear attractant gradient. Otherwise, it will be exponential.");
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::clear_outputs_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-clear_outputs", true, "Reset output nodes between brain updates.");
+std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::environment_variability_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-environment_variability", false, "Cause the environment to vary between replicate runs.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::rot_diff_coeff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-rot_diff_coeff", 0.016, "Rotational diffusion constant.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-speed", 1.0, "Magnitude of cell movement per tick.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-slope", 10.0, "Rate of gradient increase. m if linear, k if exponential.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-base", 255.0, "Base concentration at x = 0.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_slope", 1.0, "Slope will change by as much as +/- this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_base", 1.0, "Base will change by as much as +/- this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_rot_diff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_rot_diff", 0.01, "Rotational diffusion constant will change by as much as +/- this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_speed", 0.2, "Speed will change by as much as +/- this number.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
+
 
 ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initializer
   AbstractWorld(_PT) {
     //Grab the values from the parameter list.
     use_lin_gradient = (PT == nullptr) ? use_lin_gradient_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-use_lin_gradient");
     clear_outputs = (PT == nullptr) ? clear_outputs_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-clear_outputs");
+    environment_variability = (PT == nullptr) ? environment_variability_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-environment_variability");
     rot_diff_coeff = (PT == nullptr) ? rot_diff_coeff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
     speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
+    variability_slope = (PT == nullptr) ? variability_slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
+    variability_base = (PT == nullptr) ? variability_base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
+    variability_rot_diff = (PT == nullptr) ? variability_rot_diff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
+    variability_speed = (PT == nullptr) ? variability_speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     eval_ticks = (PT == nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
+
 
     //Set up data columns.
     aveFileColumns.clear();
@@ -99,6 +111,27 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   bool is_tumbling;
   double tumble_bias;
   uint32_t concentration;
+
+  //Add in environmental_variability, if enabled.
+  if (environment_variability) {
+    //Re-grab the initial values to modify.
+    rot_diff_coeff = (PT == nullptr) ? rot_diff_coeff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
+    speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
+    slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
+    base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
+
+    rot_diff_coeff += Random::getDouble((-variability_rot_diff), variability_rot_diff);
+    speed += Random::getDouble((-variability_speed), variability_speed);
+    slope += Random::getDouble((-variability_slope), variability_slope);
+    base += Random::getDouble((-variability_slope), variability_slope);
+
+    //Catch negatives and just set them to zero. You could maybe skip this, but let's do it for now.
+    if (rot_diff_coeff < 0) {rot_diff_coeff = 0;}
+    if (speed < 0) {speed = 0;}
+    if (slope < 0) {slope = 0;}
+    if (base < 0) {base = 0;}
+
+  }
 
   //Evaluate the organism for eval_ticks ticks.
   for (int t = 0; t != eval_ticks; ++t){
