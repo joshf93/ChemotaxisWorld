@@ -20,6 +20,7 @@ public:
   static std::shared_ptr<ParameterLink<bool>> use_lin_gradient_pl;
   static std::shared_ptr<ParameterLink<bool>> clear_outputs_pl;
   static std::shared_ptr<ParameterLink<bool>> environment_variability_pl;
+  static std::shared_ptr<ParameterLink<bool>> use_integral_sensor_pl;
   static std::shared_ptr<ParameterLink<double>> rot_diff_coeff_pl;
   static std::shared_ptr<ParameterLink<double>> speed_pl;
   static std::shared_ptr<ParameterLink<double>> slope_pl;
@@ -29,11 +30,13 @@ public:
   static std::shared_ptr<ParameterLink<double>> variability_rot_diff_pl;
   static std::shared_ptr<ParameterLink<double>> variability_speed_pl;
   static std::shared_ptr<ParameterLink<int>> eval_ticks_pl;
+  static std::shared_ptr<ParameterLink<int>> brain_updates_pl;
 
   //Declare the parameters
   bool use_lin_gradient;
   bool clear_outputs;
   bool environment_variability;
+  bool use_integral_sensor;
   double rot_diff_coeff;
   double speed;
   double slope; //Slope is "m" if linear, "k" if exponential.
@@ -43,7 +46,7 @@ public:
   double variability_rot_diff;
   double variability_speed;
   int eval_ticks;
-
+  int brain_updates;
 
   //Override AbstractWorld methods.
   virtual void runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) override;
