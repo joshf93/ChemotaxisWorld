@@ -126,7 +126,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Sanity check reset the brain. Shouldn't need to do this
   org->brain->resetBrain();
 
-  /*
+
   //Add in environmental_variability, if enabled.
   if (environment_variability) {
     //Re-grab the initial values to modify.
@@ -135,10 +135,10 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
 
-    rot_diff_coeff += Random::getDouble((-variability_rot_diff), variability_rot_diff);
-    speed += Random::getDouble((-variability_speed), variability_speed);
-    slope += Random::getDouble((-variability_slope), variability_slope);
-    base += Random::getDouble((-variability_slope), variability_slope);
+    rot_diff_coeff += Random::getDouble(variability_rot_diff);
+    speed += Random::getDouble(variability_speed);
+    slope += Random::getDouble(variability_slope);
+    base += Random::getDouble(variability_base);
 
     //Catch negatives and just set them to zero. You could maybe skip this, but let's do it for now.
     if (rot_diff_coeff < 0) {rot_diff_coeff = 0;}
@@ -146,19 +146,12 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     if (slope < 0) {slope = 0;}
     if (base < 0) {base = 0;}
   } // End environmental variability
-  */
+
   //Evaluate the organism for eval_ticks ticks.
   for (int t = 0; t != eval_ticks; ++t){
-    //Get concentration at location.
-    if(use_lin_gradient){
-      concentration = get_conc_linear(pos_vec[0], slope, base);
-      concentration_hist.push_back(concentration);
-    }
-    else{
-      concentration = get_conc_exp(pos_vec[0], slope, base);
-      concentration_hist.push_back(concentration);
-    }
-
+    //Get concentration at location using the appropriate method.
+    concentration = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
+    concentration_hist.push_back(concentration);
     //Integral sensor
     /* This sensor will integrate over a timescale determined by the brain.
       It will average the values over the timescale, then subtract the average
@@ -209,6 +202,8 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     */
 
     //Let's just see how they behave with a delta sensor (1 if gradient increased, 0 otherwise);
+    //Subtract 2 from size because we've already pushed concentration to the history.
+    //So we need to grab the next to last element.
     delta = concentration - concentration_hist[concentration_hist.size()-2];
     delta_hist.push_back(delta);
     if(delta > 0){
@@ -225,6 +220,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     for(int runs = 0; runs != brain_updates; ++runs){
     org->brain->update();
     }
+
     //Read the output and convert to tumble bias.
     for (int n = 0; n != 16; ++n){
       output_array[n] = org->brain->readOutput(n);
@@ -250,7 +246,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
   org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
 
-  //If in visualize mode, dump the points to file.
+  //If in visualize mode, dump the history points to file.
   if (visualize){
     //Position data
     std::ofstream out_file("chemotaxis_position_visualization_data.csv");
