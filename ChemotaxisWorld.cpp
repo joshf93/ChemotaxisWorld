@@ -9,10 +9,10 @@ std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::rot_diff_coeff_pl = Para
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-speed", 1.0, "Magnitude of cell movement per tick.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-slope", 10.0, "Rate of gradient increase. m if linear, k if exponential.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-base", 255.0, "Base concentration at x = 0.");
-std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_slope", 1.0, "Slope will change by as much as +/- this number.");
-std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_base", 1.0, "Base will change by as much as +/- this number.");
-std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_rot_diff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_rot_diff", 0.01, "Rotational diffusion constant will change by as much as +/- this number.");
-std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_speed", 0.2, "Speed will change by as much as +/- this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_slope", 1.0, "Slope will increase by as much as this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_base", 1.0, "Base will increase by as much as this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_rot_diff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_rot_diff", 0.01, "Rotational diffusion constant will increase by as much as this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_speed", 0.2, "Speed will increase by as much as this number.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::brain_updates_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-brain_updates", 1, "Number of times the brain is set to update before the output is read.");
 
@@ -106,7 +106,6 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   std::vector<int> memory_hist;
   bool output_array[16];
 
-
   //Pre-reserve capacity to prevent reallocations.
   pos_hist.reserve(eval_ticks+1);
   tumble_hist.reserve(eval_ticks+1);
@@ -126,7 +125,6 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Sanity check reset the brain. Shouldn't need to do this
   org->brain->resetBrain();
 
-
   //Add in environmental_variability, if enabled.
   if (environment_variability) {
     //Re-grab the initial values to modify.
@@ -141,6 +139,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     base += Random::getDouble(variability_base);
 
     //Catch negatives and just set them to zero. You could maybe skip this, but let's do it for now.
+    //In case someone sets negative values.
     if (rot_diff_coeff < 0) {rot_diff_coeff = 0;}
     if (speed < 0) {speed = 0;}
     if (slope < 0) {slope = 0;}
@@ -272,11 +271,8 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       out_file_delta << sample << '\n';
     }
     out_file_delta << std::endl;
-
-
   }//End visualize
 }//End of RunWorldSolo fn
-
 
 //The integral sensor will have 16 bits describing whether concentration is increasing or decreasing.
 int ChemotaxisWorld::requiredInputs() {
