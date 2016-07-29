@@ -107,21 +107,20 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   std::vector<int> ones_hist;
 
   //Pre-reserve capacity to prevent reallocations.
-  pos_hist.reserve(eval_ticks+1);
-  tumble_hist.reserve(eval_ticks+1);
-  concentration_hist.reserve(eval_ticks+1);
-  multiplier_hist.reserve(eval_ticks+1);
-  delta_hist.reserve(eval_ticks+1);
+  pos_hist.reserve(eval_ticks+2);
+  tumble_hist.reserve(eval_ticks+2);
+  concentration_hist.reserve(eval_ticks+2);
+  multiplier_hist.reserve(eval_ticks+2);
+  delta_hist.reserve(eval_ticks+2);
 
   //Initialize conc_hist to keep things simpler when calculating delta.
   double initial_conc = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
   concentration_hist.push_back(initial_conc);
 
-
   //Initialize the cell.
   bool is_tumbling;
   double tumble_bias;
-  double concentration; //Initialize to keep things simple when calculating the first delta.
+  double concentration;
   double delta;
   double accumulator;
   int multiplier;
@@ -138,8 +137,9 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
 
+    //Add in the specified amount of noise.
     rot_diff_coeff += Random::getDouble(variability_rot_diff);
-    //speed += Random::getDouble(variability_speed);
+    //speed += Random::getDouble(variability_speed); This doesn't work; for some reason it will change even if var_speed is 0.
     slope += Random::getDouble(variability_slope);
     base += Random::getDouble(variability_base);
 
@@ -152,12 +152,12 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   } // End environmental variability
 
   //Evaluate the organism for eval_ticks ticks.
-  for (int t = 0; t != eval_ticks; ++t){
+  for (int t = 0; t != eval_ticks; ++t) {
     //Get concentration at location using the appropriate method.
     concentration = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
 
     //Read in the multiplier
-    multiplier = 1;
+    multiplier = 0;
     for (int n = 16; n != 24; ++n) {
       multiplier += org->brain->readOutput(n);
     }
@@ -166,18 +166,21 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     //This is strange because I was pretty sure that values were OR'd, so they could only be binary.
     //Turns out that isn't the case, they seem to add. I have gotten values of 22-24 before
     //And presumably ones shifting over 31 were just selected against; they would 'wrap around'
-    //and shift by multiplier%32.
-    if (multiplier > 31){
+    //and shift by multiplier%32 on x86.
+    if (multiplier > 31) {
       multiplier = 31;
+    }
+    //In case logic gates can output negative numbers.
+    if (multiplier < 0) {
+      multiplier = 0;
     }
     multiplier_hist.push_back(multiplier);
 
     //Delta is the relative concentration change between now and the last sample.
-    delta = (concentration_hist.back() == 0) ? (concentration/0.000001) : (concentration - concentration_hist.back()) / concentration_hist.back();
+    delta = (concentration_hist.back() == 0) ? (concentration/0.000001) : (concentration - concentration_hist.back()) / std::abs(concentration_hist.back());
     concentration_hist.push_back(concentration); //Put here to avoid annoying side effects.
     delta_hist.push_back(delta);
-    delta *= (1 << multiplier); //Multiply by multiplier to allow org to control sensitivity to change. Squared to broaden range.
-
+    delta *= (1 << multiplier); //Lshift by multiplier to allow org to control sensitivity to change.
 
     //Convert the delta to the unary output. A delta of 0 should produce 8 1s and 8 0s
     num_ones = std::round(delta) + 8;
@@ -190,8 +193,8 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       num_ones = 16;
     }
 
-    //Set the input bits
-    for (int n = 0; n != 16; ++n){
+    //Write the input bits
+    for (int n = 0; n != 16; ++n) {
       if (num_ones != 0){
         org->brain->setInput(n,1);
         --num_ones;
@@ -214,20 +217,23 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     for (int n = 0; n != 16; ++n) {
       accumulator += org->brain->readOutput(n);
     }
-    //Ensure the accumulator isn't negative, in case gates that can output -1 are used.
+    if (accumulator > 16) {
+      accumulator = 16;
+    }
+    //Ensure the accumulator isn't negative in case gates that can output -1 are used.
     tumble_bias = (accumulator < 0) ? (1/17) : (accumulator+1)/17; //Plus one and div by 17 to make sure that TB is never 0.
     tumble_hist.push_back(tumble_bias);
 
     //Do the tumbling.
     is_tumbling = Random::P(tumble_bias);
-    if (is_tumbling){
+    if (is_tumbling) {
       pos_vec[2] = tumble();
       pos_hist.push_back(pos_vec);
     }
-    else{ //And running
+    else { //And running
       run(pos_vec);
-      pos_hist.push_back(pos_vec);
       rot_diffuse(pos_vec[2], rot_diff_coeff);
+      pos_hist.push_back(pos_vec);
     }
   }//end eval loop
 
@@ -236,50 +242,65 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
   org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
 
+  //debugging
+  if (pos_vec[0] > eval_ticks){
+    visualize = true;
+  }
+
   //If in visualize mode, dump the history points to file.
-  if (visualize){
+  if (visualize) {
+    std::cout << "Rot diff coeff was: " << rot_diff_coeff << '\n';
+    std::cout << "Slope was: " << slope << '\n';
+    std::cout << "Speed was: " << speed << '\n';
+    std::cout << "Base was: " << base << '\n';
+    std::cout << std::endl;
     //Position data
     std::ofstream out_file("chemotaxis_position_visualization_data.csv");
-    for (auto sample : pos_hist){
+    for (auto sample : pos_hist) {
       out_file << sample[0] << "," << sample[1] << "," << sample[2] << "," << '\n';
     }
     out_file << std::endl;
     //Tumble data
     std::ofstream out_file_tumble("chemotaxis_tumble_visualization_data.csv");
-    for (auto sample : tumble_hist){
+    for (auto sample : tumble_hist) {
       out_file_tumble << sample << '\n';
     }
     out_file_tumble << std::endl;
     //Concentration data
     std::ofstream out_file_conc("chemotaxis_conc_visualization_data.csv");
-    for (auto sample : concentration_hist){
+    for (auto sample : concentration_hist) {
       out_file_conc << sample << '\n';
     }
       out_file_conc << std::endl;
     //Delta data
     std::ofstream out_file_delta("chemotaxis_delta_visualization_data.csv");
-    for (auto sample : delta_hist){
+    for (auto sample : delta_hist) {
       out_file_delta << sample << '\n';
     }
     out_file_delta << std::endl;
     //Multiplier data
     std::ofstream out_file_multiplier("chemotaxis_multiplier_visualization_data.csv");
-    for (auto sample : multiplier_hist){
+    for (auto sample : multiplier_hist) {
       out_file_multiplier << sample << '\n';
     }
     out_file_multiplier << std::endl;
     //Ones count
     std::ofstream out_file_ones("chemotaxis_ones_visualization_data.csv");
-    for(auto sample : ones_hist){
+    for(auto sample : ones_hist) {
       out_file_ones << sample << '\n';
     }
     out_file_ones << std::endl;
   }//End visualize
+
+  if (visualize == true && pos_vec[0] > eval_ticks){
+    cout << "ERROR: MOVED FURTHER THAN POSSIBLE" << std::endl;
+    exit(1);
+  }
 }//End of RunWorldSolo fn
 
 //The sensor will have 16 bits describing whether concentration is increasing or decreasing.
 int ChemotaxisWorld::requiredInputs() {
-    return 16;
+  return 16;
 }
 
 //The first 16 bits of output are the tumble bias (1/17-17/17) while the next 8 are the sensitivity multiplier.
