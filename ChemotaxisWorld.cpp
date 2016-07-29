@@ -38,6 +38,19 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     aveFileColumns.clear();
     aveFileColumns.push_back("x_displacement");
     aveFileColumns.push_back("y_displacement");
+
+    //Print some stuff so we know what's going on.
+    std::cout << "#########################" << "\n";
+    std::cout << "Running ChemotaxisWorld." << "\n";
+    std::cout << "Cycles to simulate is: " << eval_ticks << "\n";
+    std::cout << "Brain updates per cycle is: " << brain_updates << "\n";
+    std::cout << "Organism speed is: " << speed << "\n";
+    std::cout << "Rotational diffusion coefficient is: " << rot_diff_coeff << "\n";
+    std::cout << "Using a variable environment: " << environment_variability << "\n";
+    std::cout << "Using a linear gradient: " << use_lin_gradient << "\n";
+    std::cout << "Slope is: " << slope << "\n";
+    std::cout << "#########################" << std::endl;
+
 }
 
 //Should return a linear concentration unless it's negative, in which case return 0.
@@ -75,24 +88,11 @@ inline void rot_diffuse(double& theta, const double &diff_coeff) {
   return;
 }
 
-//Take a vector of bits and convert it into a probability of tumbling.
-//The endianness of how the brain returns outputs shouldn't matter.
-//The organism will 'learn' it. Will only take 8 bits for now; make generic size if needed.
-//Takes vector of ints, which should be 1 or 0, multiply each position by 2**n and add
-//the result to an accumulator to convert to int. Then take accumulator+1 (so bias can't be 0)
-//and divide by 256 to get the resulting tumble bias.
-double bit_to_prob(const bool (&bit_arr)[16]) {
-  double accumulator = 0;
-  for(int idx = 0; idx != 16; ++idx){
-    accumulator += bit_arr[idx];
-  }
-  return ((accumulator+1)/17);
-}
-
+//Unused. Left here just in case.
 //Determine whether the nth bit of an uint32_t is 1. Will fail if idx > 31.
-inline int is_set(const uint32_t &num, const int &idx){
-  return ((num & (1 << idx)) >> idx);
-}
+//inline int is_set(const uint32_t &num, const int &idx){
+//  return ((num & (1 << idx)) >> idx);
+//}
 
 void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) {
   //Should be able to thread and run concurrently at the loss of reproducibility.
@@ -103,24 +103,29 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   std::vector<double> tumble_hist;
   std::vector<double> concentration_hist;
   std::vector<double> delta_hist;
-  std::vector<int> memory_hist;
-  bool output_array[16];
+  std::vector<int> multiplier_hist;
+  std::vector<int> ones_hist;
 
   //Pre-reserve capacity to prevent reallocations.
   pos_hist.reserve(eval_ticks+1);
   tumble_hist.reserve(eval_ticks+1);
   concentration_hist.reserve(eval_ticks+1);
-  memory_hist.reserve(eval_ticks+1);
+  multiplier_hist.reserve(eval_ticks+1);
   delta_hist.reserve(eval_ticks+1);
 
   //Initialize conc_hist to keep things simpler when calculating delta.
-  concentration_hist.push_back((use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base));
+  double initial_conc = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
+  concentration_hist.push_back(initial_conc);
+
 
   //Initialize the cell.
   bool is_tumbling;
   double tumble_bias;
-  double concentration;
+  double concentration; //Initialize to keep things simple when calculating the first delta.
   double delta;
+  double accumulator;
+  int multiplier;
+  int num_ones;
 
   //Sanity check reset the brain. Shouldn't need to do this
   org->brain->resetBrain();
@@ -134,12 +139,12 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
 
     rot_diff_coeff += Random::getDouble(variability_rot_diff);
-    speed += Random::getDouble(variability_speed);
+    //speed += Random::getDouble(variability_speed);
     slope += Random::getDouble(variability_slope);
     base += Random::getDouble(variability_base);
 
-    //Catch negatives and just set them to zero. You could maybe skip this, but let's do it for now.
-    //In case someone sets negative values.
+    //Catch negatives and just set them to zero. You could maybe skip this, but let's do it for now
+    //in case someone sets negative values.
     if (rot_diff_coeff < 0) {rot_diff_coeff = 0;}
     if (speed < 0) {speed = 0;}
     if (slope < 0) {slope = 0;}
@@ -150,81 +155,67 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   for (int t = 0; t != eval_ticks; ++t){
     //Get concentration at location using the appropriate method.
     concentration = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
-    concentration_hist.push_back(concentration);
-    //Integral sensor
-    /* This sensor will integrate over a timescale determined by the brain.
-      It will average the values over the timescale, then subtract the average
-      from the current value. */
-    //Get the memory length from the first 8 bits of the brain. The length is just the number of 1s.
-    /*
-    int mem_length = 0;
-    for (n = 0; n != 8; ++n){
-      mem_length += org->brain->readOutput(n);
-    }
-    mem_hist.push_back(mem_length);
 
-    //Calculate the relative change in concentration, add it to the delta history.
-    //conc_hist is initialized with a value, so no need to worry about it being empty.
-    //If the last element is zero, add a tiny value so things don't break. Should be pretty rare in practice.
-    if(conc_history.back() == 0){conc_hist[conc_hist.size()] += 0.00001;}
-    double delta = (concentration - conc_history[conc_history.back()]) / std::abs(conc_history[conc_history.back()]);
+    //Read in the multiplier
+    multiplier = 1;
+    for (int n = 16; n != 24; ++n) {
+      multiplier += org->brain->readOutput(n);
+    }
+    //Because of how brains work, this number could be almost any positive int. Cap it at 31 to
+    //Prevent undefined behavior.
+    //This is strange because I was pretty sure that values were OR'd, so they could only be binary.
+    //Turns out that isn't the case, they seem to add. I have gotten values of 22-24 before
+    //And presumably ones shifting over 31 were just selected against; they would 'wrap around'
+    //and shift by multiplier%32.
+    if (multiplier > 31){
+      multiplier = 31;
+    }
+    multiplier_hist.push_back(multiplier);
+
+    //Delta is the relative concentration change between now and the last sample.
+    delta = (concentration_hist.back() == 0) ? (concentration/0.000001) : (concentration - concentration_hist.back()) / concentration_hist.back();
+    concentration_hist.push_back(concentration); //Put here to avoid annoying side effects.
     delta_hist.push_back(delta);
+    delta *= (1 << multiplier); //Multiply by multiplier to allow org to control sensitivity to change. Squared to broaden range.
 
-    //Go through the last mem_length elements and average them.
-    double accumulator = 0;
-    int counter = 0;
-    if (mem_length > 0) {
-      auto idx_ptr = cend(delta_hist);
-      while(counter != mem_length){
-        --idx_ptr;
-        ++counter;
-        accumulator += *idx_ptr;
-      }
-    }
-    double bits_to_add = (mem_length == 0) ? delta : accumulator;
 
     //Convert the delta to the unary output. A delta of 0 should produce 8 1s and 8 0s
-    //Mult by two to give a bit more range
-    int num_ones = std::round(avg_delta) + 8;
-    if (num_ones < 0){num_ones = 0;}
-    if (num_ones > 16){num_ones = 16;}
+    num_ones = std::round(delta) + 8;
+    ones_hist.push_back(num_ones);
+    //Cap at 0 and 16 ones.
+    if (num_ones < 0) {
+      num_ones = 0;
+    }
+    if (num_ones > 16) {
+      num_ones = 16;
+    }
 
-    for (n = 0; n != 16; ++n){
+    //Set the input bits
+    for (int n = 0; n != 16; ++n){
       if (num_ones != 0){
-        org->brain->setInput(n,1)
+        org->brain->setInput(n,1);
         --num_ones;
       }
-      else{
-        org->brain->setInput(n,0)
+      else {
+        org->brain->setInput(n,0);
       }
-    }
-    */
-
-    //Let's just see how they behave with a delta sensor (1 if gradient increased, 0 otherwise);
-    //Subtract 2 from size because we've already pushed concentration to the history.
-    //So we need to grab the next to last element.
-    delta = concentration - concentration_hist[concentration_hist.size()-2];
-    delta_hist.push_back(delta);
-    if(delta > 0){
-      org->brain->setInput(0,1);
-    }
-    else{
-      org->brain->setInput(0,0);
     }
 
     //Update the brain after resetting outputs (if enabled)
-    if (clear_outputs){
+    if (clear_outputs) {
       org->brain->resetOutputs();
     }
-    for(int runs = 0; runs != brain_updates; ++runs){
-    org->brain->update();
+    for(int runs = 0; runs != brain_updates; ++runs) {
+      org->brain->update();
     }
 
     //Read the output and convert to tumble bias.
-    for (int n = 0; n != 16; ++n){
-      output_array[n] = org->brain->readOutput(n);
+    accumulator = 0;
+    for (int n = 0; n != 16; ++n) {
+      accumulator += org->brain->readOutput(n);
     }
-    tumble_bias = bit_to_prob(output_array);
+    //Ensure the accumulator isn't negative, in case gates that can output -1 are used.
+    tumble_bias = (accumulator < 0) ? (1/17) : (accumulator+1)/17; //Plus one and div by 17 to make sure that TB is never 0.
     tumble_hist.push_back(tumble_bias);
 
     //Do the tumbling.
@@ -240,7 +231,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     }
   }//end eval loop
 
-  //Score based on x movement and record some stats.
+  //Finished simulating the organism, so score based on x movement and record some stats.
   org->score = pos_vec[0];
   org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
   org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
@@ -271,19 +262,29 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       out_file_delta << sample << '\n';
     }
     out_file_delta << std::endl;
+    //Multiplier data
+    std::ofstream out_file_multiplier("chemotaxis_multiplier_visualization_data.csv");
+    for (auto sample : multiplier_hist){
+      out_file_multiplier << sample << '\n';
+    }
+    out_file_multiplier << std::endl;
+    //Ones count
+    std::ofstream out_file_ones("chemotaxis_ones_visualization_data.csv");
+    for(auto sample : ones_hist){
+      out_file_ones << sample << '\n';
+    }
+    out_file_ones << std::endl;
   }//End visualize
 }//End of RunWorldSolo fn
 
-//The integral sensor will have 16 bits describing whether concentration is increasing or decreasing.
+//The sensor will have 16 bits describing whether concentration is increasing or decreasing.
 int ChemotaxisWorld::requiredInputs() {
-    //return 16;
-    return 1;
+    return 16;
 }
 
-//The first 8 bits of output are the memory length (0-8) while the next 16 are the tumble bias.
+//The first 16 bits of output are the tumble bias (1/17-17/17) while the next 8 are the sensitivity multiplier.
 int ChemotaxisWorld::requiredOutputs() {
-  //return 24;
-  return 16;
+  return 24;
 }
 
 //Solo eval. No reason to run more than once.
