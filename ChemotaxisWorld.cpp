@@ -12,7 +12,7 @@ std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::re
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_slope", 1.0, "Slope will increase by as much as this number.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_base", 1.0, "Base will increase by as much as this number.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_rot_diff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_rot_diff", 0.01, "Rotational diffusion constant will increase by as much as this number.");
-std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_speed", 0.2, "Speed will increase by as much as this number.");
+//std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_speed", 0.2, "Speed will increase by as much as this number.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::brain_updates_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-brain_updates", 1, "Number of times the brain is set to update before the output is read.");
 
@@ -30,7 +30,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     variability_slope = (PT == nullptr) ? variability_slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     variability_base = (PT == nullptr) ? variability_base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
     variability_rot_diff = (PT == nullptr) ? variability_rot_diff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
-    variability_speed = (PT == nullptr) ? variability_speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
+    //variability_speed = (PT == nullptr) ? variability_speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     eval_ticks = (PT == nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
     brain_updates = (PT == nullptr) ? brain_updates_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-brain_updates");
 
@@ -94,6 +94,7 @@ inline void rot_diffuse(double& theta, const double &diff_coeff) {
 //  return ((num & (1 << idx)) >> idx);
 //}
 
+
 void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) {
   //Should be able to thread and run concurrently at the loss of reproducibility.
   //Starting orientation is random between 0 and 2pi.
@@ -133,7 +134,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   if (environment_variability) {
     //Re-grab the initial values to modify.
     rot_diff_coeff = (PT == nullptr) ? rot_diff_coeff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
-    speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
+    //speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     base = (PT == nullptr) ? base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
 
@@ -162,10 +163,10 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       multiplier += org->brain->readOutput(n);
     }
     //Because of how brains work, this number could be almost any positive int. Cap it at 31 to
-    //Prevent undefined behavior.
+    //prevent undefined behavior.
     //This is strange because I was pretty sure that values were OR'd, so they could only be binary.
     //Turns out that isn't the case, they seem to add. I have gotten values of 22-24 before
-    //And presumably ones shifting over 31 were just selected against; they would 'wrap around'
+    //and presumably ones shifting over 31 were just selected against; they would 'wrap around'
     //and shift by multiplier%32 on x86.
     if (multiplier > 31) {
       multiplier = 31;
@@ -221,7 +222,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       accumulator = 16;
     }
     //Ensure the accumulator isn't negative in case gates that can output -1 are used.
-    tumble_bias = (accumulator < 0) ? (1/17) : (accumulator+1)/17; //Plus one and div by 17 to make sure that TB is never 0.
+    tumble_bias = (accumulator <= 0) ? (1.0/17.0) : (accumulator + 1.0)/17.0;
     tumble_hist.push_back(tumble_bias);
 
     //Do the tumbling.
