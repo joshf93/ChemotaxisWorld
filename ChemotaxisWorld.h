@@ -28,7 +28,7 @@ public:
   static std::shared_ptr<ParameterLink<double>> variability_slope_pl;
   static std::shared_ptr<ParameterLink<double>> variability_base_pl;
   static std::shared_ptr<ParameterLink<double>> variability_rot_diff_pl;
-  static std::shared_ptr<ParameterLink<double>> variability_speed_pl;
+  //static std::shared_ptr<ParameterLink<double>> variability_speed_pl;
   static std::shared_ptr<ParameterLink<int>> eval_ticks_pl;
   static std::shared_ptr<ParameterLink<int>> brain_updates_pl;
 
@@ -44,7 +44,7 @@ public:
   double variability_slope; //Magnifies or decreases the amount of variability
   double variability_base;
   double variability_rot_diff;
-  double variability_speed;
+  //double variability_speed;
   int eval_ticks;
   int brain_updates;
 
