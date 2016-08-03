@@ -117,6 +117,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Initialize conc_hist to keep things simpler when calculating delta.
   double initial_conc = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
   concentration_hist.push_back(initial_conc);
+  pos_hist.push_back(pos_vec);
 
   //Initialize the cell.
   bool is_tumbling;
