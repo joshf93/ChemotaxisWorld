@@ -186,7 +186,6 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
 
     //Convert the delta to the unary output. A delta of 0 should produce 8 1s and 8 0s
     num_ones = std::round(delta) + 8;
-    ones_hist.push_back(num_ones);
     //Cap at 0 and 16 ones.
     if (num_ones < 0) {
       num_ones = 0;
@@ -194,6 +193,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     if (num_ones > 16) {
       num_ones = 16;
     }
+    ones_hist.push_back(num_ones);
 
     //Write the input bits
     for (int n = 0; n != 16; ++n) {
