@@ -5,6 +5,7 @@ std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::use_lin_gradient_pl = Para
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::clear_outputs_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-clear_outputs", true, "Reset output nodes between brain updates.");
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::environment_variability_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-environment_variability", false, "Cause the environment to vary between replicate runs.");
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::use_integral_sensor_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-use_integral_sensor", false, "Use the (experimental) integral sensor.");
+std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::point_source_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-point_sources", false, "Use 'spot' sources of attractant. Still follows your choice of linear/exp gradient.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::rot_diff_coeff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-rot_diff_coeff", 0.016, "Rotational diffusion constant.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-speed", 1.0, "Magnitude of cell movement per tick.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-slope", 10.0, "Rate of gradient increase. m if linear, k if exponential.");
@@ -12,6 +13,8 @@ std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::base_pl = Parameters::re
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_slope", 1.0, "Slope will increase by as much as this number.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_base_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_base", 1.0, "Base will increase by as much as this number.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_rot_diff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_rot_diff", 0.01, "Rotational diffusion constant will increase by as much as this number.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::spot_x_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-spot_x", 300.0, "The x coordinate of the attractant spot.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::spot_y_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-spot_y", 300.0, "The y coordinate of the attractant spot.");
 //std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_speed", 0.2, "Speed will increase by as much as this number.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::brain_updates_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-brain_updates", 1, "Number of times the brain is set to update before the output is read.");
@@ -23,6 +26,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     clear_outputs = (PT == nullptr) ? clear_outputs_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-clear_outputs");
     environment_variability = (PT == nullptr) ? environment_variability_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-environment_variability");
     use_integral_sensor = (PT == nullptr) ? use_integral_sensor_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-use_integral_sensor");
+    point_source = (PT == nullptr) ? point_source_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-point_sources");
     rot_diff_coeff = (PT == nullptr) ? rot_diff_coeff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
     speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
@@ -30,6 +34,8 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     variability_slope = (PT == nullptr) ? variability_slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
     variability_base = (PT == nullptr) ? variability_base_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-base");
     variability_rot_diff = (PT == nullptr) ? variability_rot_diff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
+    spot_x = (PT == nullptr) ? spot_x_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-spot_x");
+    spot_y = (PT == nullptr) ? spot_y_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-spot_y");
     //variability_speed = (PT == nullptr) ? variability_speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     eval_ticks = (PT == nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
     brain_updates = (PT == nullptr) ? brain_updates_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-brain_updates");
@@ -38,6 +44,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     aveFileColumns.clear();
     aveFileColumns.push_back("x_displacement");
     aveFileColumns.push_back("y_displacement");
+    aveFileColumns.push_back("concentration_sum");
 
     //Print some stuff so we know what's going on.
     std::cout << "#########################" << "\n";
@@ -46,6 +53,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     std::cout << "Brain updates per cycle is: " << brain_updates << "\n";
     std::cout << "Organism speed is: " << speed << "\n";
     std::cout << "Rotational diffusion coefficient is: " << rot_diff_coeff << "\n";
+    std::cout << "Using point sources: " << point_source << "\n";
     std::cout << "Using a variable environment: " << environment_variability << "\n";
     std::cout << "Using a linear gradient: " << use_lin_gradient << "\n";
     std::cout << "Slope is: " << slope << "\n";
@@ -66,6 +74,20 @@ inline double get_conc_exp(const double &x, const double &k, const double &base)
   double conc = exp(k * x) + base;
   return ((conc > 0) ? conc : 0);
 }
+
+//Set up a "spot" of attractant. Can have exp or linear gradient.
+//Calculate the distance from the point to the organism. Then feed that into the
+//Linear/exp gradients with flipped sign (closer = higher score)
+//Large spot big value: linear = big base + small slope. Exp: medium (~20?) + less than one slope
+//Small spot, but high value = big base + large slope. Exp: medium (~20?) + larger slope (~1)
+//Large spot low value = small base + very small slope. Exp: low base + lass than one slope
+//Small spot low value = small base + large slope. Exp: low base + larger slope (~1)
+//X,Y are organism position, point_x, point_y are the spot position.
+inline double get_conc_point(const double &x, const double &y, const double &point_x,\
+   const double &point_y, const double &slope, const double &base, const bool &lin_grad){
+  double distance = std::sqrt(pow((point_x-x),2) + pow((point_y-y),2));
+  return((lin_grad) ? get_conc_linear(distance, -slope, base) : get_conc_exp(distance, -slope, base));
+  }
 
 //Use the cell's x position, y position, angle theta, and the cell's speed
 //to calculate the new position. Void because it works directly on the vector by ref.
@@ -156,8 +178,12 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Evaluate the organism for eval_ticks ticks.
   for (int t = 0; t != eval_ticks; ++t) {
     //Get concentration at location using the appropriate method.
-    concentration = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
-
+    if(point_source){
+      concentration = get_conc_point(pos_vec[0], pos_vec[1], spot_x, spot_y, slope, base, use_lin_gradient);
+    }
+    else{
+      concentration = (use_lin_gradient) ? get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
+    }
     //Read in the multiplier
     multiplier = 0;
     for (int n = 16; n != 24; ++n) {
@@ -239,15 +265,20 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     }
   }//end eval loop
 
-  //Finished simulating the organism, so score based on x movement and record some stats.
-  org->score = pos_vec[0];
-  org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
-  org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
-
-  //debugging
-  if (pos_vec[0] > eval_ticks){
-    visualize = true;
+  //Pick an eval method
+  if (point_source) {
+    org->score = std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0);
+    org->dataMap.Append("allconcentration_sum", (double) std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0));
+    org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
+    org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
   }
+  else {
+    org->score = pos_vec[0];
+    org->dataMap.Append("allconcentration_sum", (double) std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0));
+    org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
+    org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
+  }
+  //Finished simulating the organism, so score based on x movement and record some stats.
 
   //If in visualize mode, dump the history points to file.
   if (visualize) {
