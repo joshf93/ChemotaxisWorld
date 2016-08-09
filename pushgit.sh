@@ -1,4 +1,4 @@
 git init
 git add .
 git commit -a
-git push
+git push origin --tags
