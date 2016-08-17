@@ -24,15 +24,6 @@ Developing a chemotaxis worldfile for MABE project
 
 
 
-TODO: See if we can get output into a format 
-
-look like detection.mat 
-
-
-
-
-
-
 
 
 
