@@ -55,6 +55,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     std::cout << "Using a variable environment: " << environment_variability << "\n";
     std::cout << "Using a linear gradient: " << use_lin_gradient << "\n";
     std::cout << "Slope is: " << slope << "\n";
+    std::cout << "Binary sensor is: " << use_bit_sensor << "\n";
     std::cout << "#########################" << std::endl;
 
 }
@@ -278,17 +279,23 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   //Pick an eval method
   if (point_source) {
     org->score = std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0);
-    org->dataMap.Append("allconcentration_sum", \
+    org->dataMap.Append("concentration_sum", \
     (double) std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0));
-    org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
-    org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
+    org->dataMap.Append("x_displacement", (double) pos_vec[0]);
+    org->dataMap.Append("y_displacement", (double) pos_vec[1]);
+    org->dataMap.setOutputBehavior("concentration_sum", DataMap::AVE);
+    org->dataMap.setOutputBehavior("x_displacement", DataMap::AVE);
+    org->dataMap.setOutputBehavior("y_displacement", DataMap::AVE);
   }
   else {
     org->score = pos_vec[0];
-    org->dataMap.Append("allconcentration_sum", \
+    org->dataMap.Append("concentration_sum", \
     (double) std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0));
-    org->dataMap.Append("allx_displacement", (double) pos_vec[0]);
-    org->dataMap.Append("ally_displacement", (double) pos_vec[1]);
+    org->dataMap.Append("x_displacement", (double) pos_vec[0]);
+    org->dataMap.Append("y_displacement", (double) pos_vec[1]);
+    org->dataMap.setOutputBehavior("concentration_sum", DataMap::AVE);
+    org->dataMap.setOutputBehavior("x_displacement", DataMap::AVE);
+    org->dataMap.setOutputBehavior("y_displacement", DataMap::AVE);
   }
 
   //If in visualize mode, dump the history points to file.
