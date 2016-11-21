@@ -276,7 +276,8 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   }//end eval loop
 
   //Finished simulating the organism, so score based on x movement and record some stats.
-  //Pick an eval method
+  //Pick an eval method. Look at TestWorld and BerryWorld to get an idea of how
+  //the dataMaps work. It's what I had to do!
   if (point_source) {
     org->score = std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0);
     org->dataMap.Append("concentration_sum", \
