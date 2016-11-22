@@ -10,6 +10,7 @@
 #include <cmath>
 #include <fstream>
 #include <numeric>
+#include <omp.h>
 
 class ChemotaxisWorld: public AbstractWorld {
 public:
@@ -23,6 +24,7 @@ public:
   static std::shared_ptr<ParameterLink<bool>> environment_variability_pl;
   static std::shared_ptr<ParameterLink<bool>> use_bit_sensor_pl;
   static std::shared_ptr<ParameterLink<bool>> point_source_pl;
+  static std::shared_ptr<ParameterLink<bool>> matrix_pl;
   static std::shared_ptr<ParameterLink<double>> rot_diff_coeff_pl;
   static std::shared_ptr<ParameterLink<double>> speed_pl;
   static std::shared_ptr<ParameterLink<double>> slope_pl;
@@ -59,5 +61,18 @@ public:
   virtual int requiredOutputs() override;
   virtual int maxOrgsAllowed() override;
   virtual int minOrgsAllowed() override;
+
+
+
 };
+// Data struct for working with points more cleanly. Had to put it here to get
+// It to be usable as a function parameter.
+struct point_vector {
+  double x;
+  double y;
+  double theta;
+  double magnitude;
+};
+
+
 #endif

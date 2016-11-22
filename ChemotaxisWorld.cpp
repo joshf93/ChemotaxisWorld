@@ -6,6 +6,7 @@ std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::clear_outputs_pl = Paramet
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::environment_variability_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-environment_variability", false, "Cause the environment to vary between replicate runs.");
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::use_bit_sensor_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-use_bit_sensor", false, "Use the single bit sensor.");
 std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::point_source_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-point_sources", false, "Use 'spot' sources of attractant. Still follows your choice of linear/exp gradient.");
+std::shared_ptr<ParameterLink<bool>> ChemotaxisWorld::matrix_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-Matrix_mode", false, "Simulate a matrix being present in the word.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::rot_diff_coeff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-rot_diff_coeff", 0.016, "Rotational diffusion constant.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::speed_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-speed", 1.0, "Magnitude of cell movement per tick.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::slope_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-slope", 10.0, "Rate of gradient increase. m if linear, k if exponential.");
@@ -58,6 +59,15 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     std::cout << "Binary sensor is: " << use_bit_sensor << "\n";
     std::cout << "#########################" << std::endl;
 
+    //Warn if user does not have OMP cancellation enabled.
+    bool cancel_status = omp_get_cancellation();
+    if (not cancel_status){
+      std::cout << R"(OpenMP cancellation is not enabled, and will slow matrix
+        collision calculations considerably. To enable, enter the following in
+        your command line: export OMP_CANCELLATION=true)" << std::endl;
+    }
+
+
 }
 
 //Should return a linear concentration unless concentration would be negative,
@@ -87,12 +97,64 @@ inline double get_conc_point(const double &x, const double &y, const double &poi
   return((lin_grad) ? get_conc_linear(distance, -slope, base) : get_conc_exp(distance, -slope, base));
   }
 
+bool check_collision(const point_vector &pos_vec, \
+  const std::vector<point_vector> &matrix_vec, const double &radius){
+    //Check to see if a collision occured.
+    //Calc collision rectangle
+    double alpha = -((M_PI/2)-pos_vec.theta);
+    point_vector point_a {pos_vec.x + radius*cos(alpha), pos_vec.y + radius*sin(alpha), 0, 0};
+    point_vector vec_ab {point_a.x, point_a.y, M_PI+alpha, radius*2};
+    point_vector vec_ad {point_a.x, point_a.y, pos_vec.theta, pos_vec.magnitude};
+    //point_vector rec_c {(rec_b.x + cos(pos_vec.theta)), rec_b.y + sin(pos_vec.theta), 0, 0};
+    //Method used does not require the fourth point.
+
+
+    /*See if any of the points are in the rectangle. Thanks to:
+    http://math.stackexchange.com/questions/190111/how-to-check-if-a-point-is-inside-a-rectangle
+    Raymond Manzoni (http://math.stackexchange.com/users/21783/raymond-manzoni),
+    How to check if a point is inside a rectangle?, URL (version: 2012-09-03):
+    http://math.stackexchange.com/q/190373) */
+    // http://bisqwit.iki.fi/story/howto/openmp/#IntroductionToOpenmpInC
+    // http://jakascorner.com/blog/2016/08/omp-cancel.html
+    // Both big helps for getting OpenMP working.
+    bool in_rec = false;
+    {
+    #pragma omp parallel for
+    for (auto pt = matrix_vec.begin(); pt < matrix_vec.end(); pt++) {
+      // Calculate the A->P vector
+      double ap_x = pt->x - point_a.x;
+      double ap_y = pt->y - point_a.y;
+      point_vector vec_ap {ap_x, ap_y, atan2(ap_y, ap_x), sqrt(pow(ap_x,2)+pow(ap_y,2))};
+      double ap_ab_prod = vec_ap.magnitude * vec_ab.magnitude * cos(vec_ap.theta-vec_ab.theta);
+      double ab_squared = vec_ab.magnitude * vec_ab.magnitude;
+      double ap_ad_prod = vec_ap.magnitude * vec_ad.magnitude * cos(vec_ap.theta - vec_ad.theta);
+      double ad_squared = vec_ad.magnitude * vec_ad.magnitude;
+
+      if ((ap_ab_prod < ab_squared) && (ap_ad_prod < ad_squared)){
+        //std::cout << "Found one:" << pt->x << "," << pt->y << "\n";
+        //std::cout << "ap_x:" << ap_x << ", ap_y:" << ap_y << "\n";
+        //std::cout << "point_ax:" << point_a.x << ", point_ay:" << point_a.y << std::endl;
+        #pragma omp critical
+        {
+          in_rec = true;
+        }
+        #pragma omp cancel for
+      }
+    }
+  }//end OpenMP
+    return (in_rec);
+}
+
+
+
+
 //Use the cell's x position, y position, angle theta, and the cell's speed
 //to calculate the new position. pos_vec has the form [x,y,theta,speed]
-inline void run(std::vector<double> &pos_vec) {
-  pos_vec[0] += (pos_vec[3] * cos(pos_vec[2]));
-  pos_vec[1] += (pos_vec[3] * sin(pos_vec[2]));
-  return;
+inline point_vector run(const point_vector &pos_vec) {
+  point_vector new_pos {0, 0, pos_vec.theta, pos_vec.magnitude};
+  new_pos.x = pos_vec.x + (pos_vec.magnitude * cos(pos_vec.theta));
+  new_pos.y = pos_vec.y + (pos_vec.magnitude * sin(pos_vec.theta));
+  return (new_pos);
 }
 
 //The cell tumbles; resulting in a new theta between 0 and 2*pi
@@ -102,24 +164,20 @@ inline double tumble() {
 }
 
 //Causes random changes in theta which depend on the diffusion coefficient.
-inline void rot_diffuse(double& theta, const double &diff_coeff) {
-  theta += (Random::getNormal(0,1) * diff_coeff);
-  return;
+inline double rot_diffuse(double& theta, const double &diff_coeff) {
+  return (theta + (Random::getNormal(0,1) * diff_coeff));
 }
 
 void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, bool visualize, bool debug) {
-  //Should be able to thread and run concurrently at the loss of reproducibility.
   //Starting orientation is random between 0 and 2pi.
-  std::vector<double> pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};
-  std::vector<std::vector<double>> pos_hist;
+  point_vector pos_vec{0.0, 0.0, Random::getDouble(0,2 * M_PI), speed};
+  point_vector spot_vec{spot_x, spot_y, 0, 0};
+  std::vector<point_vector> pos_hist;
   std::vector<double> tumble_hist;
   std::vector<double> concentration_hist;
   std::vector<double> delta_hist;
   std::vector<int> multiplier_hist;
   std::vector<int> ones_hist;
-
-  //Pre-reserve capacity to prevent reallocations.
-  pos_hist.reserve(eval_ticks+2);
   tumble_hist.reserve(eval_ticks+2);
   concentration_hist.reserve(eval_ticks+2);
   multiplier_hist.reserve(eval_ticks+2);
@@ -127,11 +185,11 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
 
   //Initialize conc_hist to keep things simpler when calculating delta.
   if(point_source){
-    concentration_hist.push_back(get_conc_point(pos_vec[0], pos_vec[1], spot_x, spot_y, slope, base, use_lin_gradient));
+    concentration_hist.push_back(get_conc_point(pos_vec.x, pos_vec.y, spot_vec.x, spot_vec.y, slope, base, use_lin_gradient));
   }
   else{
     concentration_hist.push_back((use_lin_gradient) ? \
-    get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base));
+    get_conc_linear(pos_vec.x, slope, base) : get_conc_exp(pos_vec.x, slope, base));
   }
   pos_hist.push_back(pos_vec);
 
@@ -141,8 +199,31 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   double concentration;
   double delta;
   double accumulator;
+  double radius = 1;
   int multiplier;
   int num_ones;
+
+
+  //Matrix initialization
+  //Only need to put circles in the range of positions that can be reached
+  std::vector <std::tuple<double,double>> matrix_vec;
+  double pos_lim;
+  double neg_lim;
+  double circ_x;
+  double circ_y;
+  int num_points = 500;
+
+  //Generate the matrix, if applicable
+  if (matrix_pl) {
+    pos_lim = speed*eval_ticks;
+    neg_lim = -pos_lim;
+    for (int n = 0; n < num_points; n++) {
+      circ_x = Random::getDouble(neg_lim, pos_lim);
+      circ_y = Random::getDouble(neg_lim, pos_lim);
+      matrix_vec.push_back(std::make_tuple(circ_x, circ_y));
+      }
+    } //End matrix generation
+
 
   //Sanity check reset the brain. Shouldn't need to do this, but couldn't hurt.
   org->brain->resetBrain();
@@ -171,11 +252,11 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   for (int t = 0; t != eval_ticks; ++t) {
     //Get concentration at the org's location using the appropriate method.
     if(point_source){
-      concentration = get_conc_point(pos_vec[0], pos_vec[1], spot_x, spot_y, slope, base, use_lin_gradient);
+      concentration = get_conc_point(pos_vec.x, pos_vec.y, spot_vec.x, spot_vec.y, slope, base, use_lin_gradient);
     }
     else{
       concentration = (use_lin_gradient) ? \
-      get_conc_linear(pos_vec[0], slope, base) : get_conc_exp(pos_vec[0], slope, base);
+      get_conc_linear(pos_vec.x, slope, base) : get_conc_exp(pos_vec.x, slope, base);
     }
 
     //Use the bit sensor
@@ -265,12 +346,12 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     //Do the tumbling and running.
     is_tumbling = Random::P(tumble_bias);
     if (is_tumbling) {
-      pos_vec[2] = tumble();
+      pos_vec.theta = tumble();
       pos_hist.push_back(pos_vec);
     }
     else {
-      run(pos_vec);
-      rot_diffuse(pos_vec[2], rot_diff_coeff);
+      pos_vec = run(pos_vec);
+      pos_vec.theta = rot_diffuse(pos_vec.theta, rot_diff_coeff);
       pos_hist.push_back(pos_vec);
     }
   }//end eval loop
@@ -282,18 +363,18 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     org->score = std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0);
     org->dataMap.Append("concentration_sum", \
     (double) std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0));
-    org->dataMap.Append("x_displacement", (double) pos_vec[0]);
-    org->dataMap.Append("y_displacement", (double) pos_vec[1]);
+    org->dataMap.Append("x_displacement", (double) pos_vec.x);
+    org->dataMap.Append("y_displacement", (double) pos_vec.y);
     org->dataMap.setOutputBehavior("concentration_sum", DataMap::AVE);
     org->dataMap.setOutputBehavior("x_displacement", DataMap::AVE);
     org->dataMap.setOutputBehavior("y_displacement", DataMap::AVE);
   }
   else {
-    org->score = pos_vec[0];
+    org->score = pos_vec.x;
     org->dataMap.Append("concentration_sum", \
     (double) std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0));
-    org->dataMap.Append("x_displacement", (double) pos_vec[0]);
-    org->dataMap.Append("y_displacement", (double) pos_vec[1]);
+    org->dataMap.Append("x_displacement", (double) pos_vec.x);
+    org->dataMap.Append("y_displacement", (double) pos_vec.y);
     org->dataMap.setOutputBehavior("concentration_sum", DataMap::AVE);
     org->dataMap.setOutputBehavior("x_displacement", DataMap::AVE);
     org->dataMap.setOutputBehavior("y_displacement", DataMap::AVE);
@@ -309,7 +390,7 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
     //Position data
     std::ofstream out_file("chemotaxis_position_visualization_data.csv");
     for (auto sample : pos_hist) {
-      out_file << sample[0] << "," << sample[1] << "," << sample[2] << "," << '\n';
+      out_file << sample.x << "," << sample.y << "," << sample.theta << "," << '\n';
     }
     out_file << std::endl;
     //Tumble data
