@@ -10,7 +10,7 @@
 #include <cmath>
 #include <fstream>
 #include <numeric>
-#include <omp.h>
+
 
 class ChemotaxisWorld: public AbstractWorld {
 public:

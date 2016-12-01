@@ -59,15 +59,6 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     std::cout << "Binary sensor is: " << use_bit_sensor << "\n";
     std::cout << "#########################" << std::endl;
 
-    //Warn if user does not have OMP cancellation enabled.
-    bool cancel_status = omp_get_cancellation();
-    if (not cancel_status){
-      std::cout << R"(OpenMP cancellation is not enabled, and will slow matrix
-        collision calculations considerably. To enable, enter the following in
-        your command line: export OMP_CANCELLATION=true)" << std::endl;
-    }
-
-
 }
 
 //Should return a linear concentration unless concentration would be negative,
