@@ -1,0 +1,28 @@
+﻿Clone this repository and the main repository (https://github.com/ahnt/MABE) onto your local machine.
+
+Place the ChemotaxisWorld folder into the /MABE/World folder.
+
+Go back into the /MABE/ directory and edit the file named buildOptions.txt.
+
+Place  “+ Chemotaxis” [without quotes] below the % World heading.
+
+Open your terminal and navigate to the /MABE/ directory.
+
+Enter the command: python3 ./PythonTools/Mbuild.py
+
+Once compiling is finished, copy the executable to another directory.
+
+Open your terminal in that directory and enter ./MABE -s 
+
+This will generate the settings files for MABE. 
+
+Open the settings_world.cfg file in a text editor, and edit it so that worldType = Chemotaxis
+
+You can now run MABE by entering ./MABE -f *.cfg
+
+For details on the settings files, see the MABE wiki located on the GitHub page.
+
+
+
+
+
