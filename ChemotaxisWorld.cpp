@@ -16,6 +16,8 @@ std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_base_pl = Pa
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::variability_rot_diff_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-variability_rot_diff", 0.01, "Rotational diffusion constant will increase by as much as this number.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::spot_x_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-spot_x", 300.0, "The x coordinate of the attractant spot.");
 std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::spot_y_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-spot_y", 300.0, "The y coordinate of the attractant spot.");
+std::shared_ptr<ParameterLink<double>> ChemotaxisWorld::radius_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-radius", 2.0, "The radius of the organism.");
+std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::num_points_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-num_points", 300, "The number of points to insert if a matrix is present.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::eval_ticks_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-eval_ticks", 5000, "Number of ticks to evaluate.");
 std::shared_ptr<ParameterLink<int>> ChemotaxisWorld::brain_updates_pl = Parameters::register_parameter("WORLD_CHEMOTAXIS-brain_updates", 1, "Number of times the brain is set to update before the output is read.");
 
@@ -27,6 +29,7 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     environment_variability = (PT == nullptr) ? environment_variability_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-environment_variability");
     use_bit_sensor = (PT == nullptr) ? use_bit_sensor_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-use_bit_sensor");
     point_source = (PT == nullptr) ? point_source_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-point_sources");
+    use_matrix = (PT == nullptr) ? matrix_pl->lookup() : PT->lookupBool("WORLD_CHEMOTAXIS-Matrix_mode");
     rot_diff_coeff = (PT == nullptr) ? rot_diff_coeff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
     speed = (PT == nullptr) ? speed_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-speed");
     slope = (PT == nullptr) ? slope_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-slope");
@@ -36,8 +39,11 @@ ChemotaxisWorld::ChemotaxisWorld(std::shared_ptr<ParametersTable> _PT) : //Initi
     variability_rot_diff = (PT == nullptr) ? variability_rot_diff_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-rot_diff_coeff");
     spot_x = (PT == nullptr) ? spot_x_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-spot_x");
     spot_y = (PT == nullptr) ? spot_y_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-spot_y");
+    radius = (PT == nullptr) ? radius_pl->lookup() : PT->lookupDouble("WORLD_CHEMOTAXIS-radius");
+    num_points = (PT == nullptr) ? num_points_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-num_points");
     eval_ticks = (PT == nullptr) ? eval_ticks_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-eval_ticks");
     brain_updates = (PT == nullptr) ? brain_updates_pl->lookup() : PT->lookupInt("WORLD_CHEMOTAXIS-brain_updates");
+
 
     //Set up data columns.
     aveFileColumns.clear();
@@ -88,56 +94,109 @@ inline double get_conc_point(const double &x, const double &y, const double &poi
   return((lin_grad) ? get_conc_linear(distance, -slope, base) : get_conc_exp(distance, -slope, base));
   }
 
-bool check_collision(const point_vector &pos_vec, \
-  const std::vector<point_vector> &matrix_vec, const double &radius){
-    //Check to see if a collision occured.
-    //Calc collision rectangle
-    double alpha = -((M_PI/2)-pos_vec.theta);
-    point_vector point_a {pos_vec.x + radius*cos(alpha), pos_vec.y + radius*sin(alpha), 0, 0};
-    point_vector vec_ab {point_a.x, point_a.y, M_PI+alpha, radius*2};
-    point_vector vec_ad {point_a.x, point_a.y, pos_vec.theta, pos_vec.magnitude};
-    //point_vector rec_c {(rec_b.x + cos(pos_vec.theta)), rec_b.y + sin(pos_vec.theta), 0, 0};
-    //Method used does not require the fourth point.
+double fast_atan2(const double &y, const double &x) {
+    //Fast approximation of atan2, see:
+    //http://www.iro.umontreal.ca/~mignotte/IFT2425/Documents/EfficientApproximationArctgFunction.pdf
+    //For 100M iterations on my laptop:
+    // atan2(any angle) ~ 20s
+    // fast_atan2(any angle) ~13s
+    // fast_atan2(small angles, same sign) ~3s, much easier on branch predictor
+    // fast_atan2(small angles, random sign) ~5.5s
+    //Error never exceeds 0.0038, just like the paper says. It's usually smaller
+    //Than that.
+    double result;
+    double ratio = y/x;
 
+    //If the ratio is outside 1, this approx can't be used. Also bow out for exact
+    //zeroes.
+    if (ratio > 1 || y == 0.0  || x == 0.0){
+      return atan2(y, x);
+    }
 
-    /*See if any of the points are in the rectangle. Thanks to:
-    http://math.stackexchange.com/questions/190111/how-to-check-if-a-point-is-inside-a-rectangle
-    Raymond Manzoni (http://math.stackexchange.com/users/21783/raymond-manzoni),
-    How to check if a point is inside a rectangle?, URL (version: 2012-09-03):
-    http://math.stackexchange.com/q/190373) */
-    // http://bisqwit.iki.fi/story/howto/openmp/#IntroductionToOpenmpInC
-    // http://jakascorner.com/blog/2016/08/omp-cancel.html
-    // Both big helps for getting OpenMP working.
-    bool in_rec = false;
-    {
-    #pragma omp parallel for
+    //Otherwise, use eq 7 from the paper. This is the octant section.
+    //Signs of x and y.
+    int s_x = (x >= 0) ? 1 : -1;
+    int s_y = (y >= 0) ? 1 : -1;
+
+    if ((s_x == 1) && (fabs(ratio) < (M_PI/4))){
+      //Oct I and VIII
+      result = ratio * (1.0584-s_y*0.273*ratio);
+    }
+    else if ((s_y == 1) && (fabs(ratio) > (M_PI/4))){
+      //Oct II and III
+      result = (M_PI/2) - (1/ratio)*(1.0584-s_x*0.273*(1/ratio));
+    }
+    else if ((s_x == -1) && (fabs(ratio) < (M_PI/4))){
+      //Oct IV and V
+      result = s_y*M_PI + ratio*(1.0584+s_y*0.273*ratio);
+    }
+    else {
+      //Oct VI and VII
+      result = -(M_PI/2) - (1/ratio)*(1.0584+s_x*0.273*(1/ratio));
+    }
+
+    return result;
+  }
+
+  //Optimized version. Will calculate the run even if no collision occurs.
+point_vector check_collision(const point_vector &pos_vec, \
+    const std::vector<point_vector> &matrix_vec, const double &radius){
+    //Run. If no collisions, equiv to normal run. If collisions, moves with a
+    //square collision front to the nearest collision.
+    point_vector move_vec {0,0,pos_vec.theta,pos_vec.magnitude};
+    double cp_x;
+    double cp_y;
+    double cp_dist;
+    double psi; //Theta converted from 0,2pi to -pi,pi for angle dist measures.
+    double phi;
+    double move_dist;
+    double r_dist;
+    //Calculate the move as if no collisions happened.
+    move_vec.x = pos_vec.x + pos_vec.magnitude * cos(pos_vec.theta);
+    move_vec.y = pos_vec.y + pos_vec.magnitude * sin(pos_vec.theta);
+
+    //Tumbles can change theta to the range [0,2pi]. In order to do our next trick,
+    //theta must not be greater than 2pi. This step should suffice, as rotational
+    //diffusion will only take the organism so far; it shouldn't pass 4pi.
+    psi = (pos_vec.theta > 2*M_PI) ? pos_vec.theta - 2*M_PI : pos_vec.theta;
+    //Doing this makes angle comparisons a bit easier considering the output of
+    //atan2.
+    psi = (psi > M_PI) ? psi - 2*M_PI : psi;
+
     for (auto pt = matrix_vec.begin(); pt < matrix_vec.end(); pt++) {
-      // Calculate the A->P vector
-      double ap_x = pt->x - point_a.x;
-      double ap_y = pt->y - point_a.y;
-      point_vector vec_ap {ap_x, ap_y, atan2(ap_y, ap_x), sqrt(pow(ap_x,2)+pow(ap_y,2))};
-      double ap_ab_prod = vec_ap.magnitude * vec_ab.magnitude * cos(vec_ap.theta-vec_ab.theta);
-      double ab_squared = vec_ab.magnitude * vec_ab.magnitude;
-      double ap_ad_prod = vec_ap.magnitude * vec_ad.magnitude * cos(vec_ap.theta - vec_ad.theta);
-      double ad_squared = vec_ad.magnitude * vec_ad.magnitude;
+      //Go through each point and check for a collision.
+      //Starting from c and moving to p.
+      cp_x = pt->x - pos_vec.x;
+      cp_y = pt->y - pos_vec.y;
 
-      if ((ap_ab_prod < ab_squared) && (ap_ad_prod < ad_squared)){
-        //std::cout << "Found one:" << pt->x << "," << pt->y << "\n";
-        //std::cout << "ap_x:" << ap_x << ", ap_y:" << ap_y << "\n";
-        //std::cout << "point_ax:" << point_a.x << ", point_ay:" << point_a.y << std::endl;
-        #pragma omp critical
-        {
-          in_rec = true;
-        }
-        #pragma omp cancel for
+      //Filter out points that are too far away. This is an extra step, but is
+      //worthwhile for the following reasons: the full suite of calcs has
+      //some slow calculations (atan2 in particular). The second is that the
+      //operations needed to exclude these points are very cheap; two additions, two
+      //abs, and three compares/logicals, each of which are extremely quick (1-3cycles).
+      //Finally, the branch predictor should handle it well, since 95% of points will
+      //take the early exit opportunity.
+      if(fabs(cp_x) > pos_vec.magnitude + radius || fabs(cp_y) > pos_vec.magnitude + radius) {
+        continue; //Impossible to collide with it. Skip to the next point.
+      }
+
+      //Calculate dist from point to movement line.
+      cp_dist = sqrt((cp_x*cp_x)+(cp_y*cp_y));
+      phi =  fast_atan2(cp_y, cp_x) - psi; //Custom atan approximation
+      move_dist = cos(phi) * cp_dist;
+      r_dist = sin(phi) * cp_dist;
+      if ((fabs(r_dist) < radius) && (cp_dist < (pos_vec.magnitude + radius)) && (fabs(phi) < M_PI/2) && (move_dist < pos_vec.magnitude)) {
+        //move_vec.magnitude = move_dist;
+        move_vec.x = cp_x;
+        move_vec.y = cp_y;
+        //Randomly orient after collision. Doesn't matter if we do it multiple times,
+        //which should be relatively rare anyway.
+        move_vec.theta = Random::getDouble(2 * M_PI);
+        //std::cout << "COLLISION DETECTED:" << cp_x << "," << cp_y << std::endl;
       }
     }
-  }//end OpenMP
-    return (in_rec);
-}
-
-
-
+    return (move_vec);
+  }
 
 //Use the cell's x position, y position, angle theta, and the cell's speed
 //to calculate the new position. pos_vec has the form [x,y,theta,speed]
@@ -190,28 +249,23 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
   double concentration;
   double delta;
   double accumulator;
-  double radius = 1;
   int multiplier;
   int num_ones;
 
-
   //Matrix initialization
   //Only need to put circles in the range of positions that can be reached
-  std::vector <std::tuple<double,double>> matrix_vec;
-  double pos_lim;
-  double neg_lim;
-  double circ_x;
-  double circ_y;
-  int num_points = 500;
+  std::vector <point_vector> matrix_vec;
+  double pt_lim;
+  double pt_x;
+  double pt_y;
 
   //Generate the matrix, if applicable
-  if (matrix_pl) {
-    pos_lim = speed*eval_ticks;
-    neg_lim = -pos_lim;
+  if (use_matrix) {
+    pt_lim = speed*eval_ticks;
     for (int n = 0; n < num_points; n++) {
-      circ_x = Random::getDouble(neg_lim, pos_lim);
-      circ_y = Random::getDouble(neg_lim, pos_lim);
-      matrix_vec.push_back(std::make_tuple(circ_x, circ_y));
+      pt_x = Random::getDouble(0, pt_lim);
+      pt_y = Random::getDouble(-pt_lim, pt_lim);
+      matrix_vec.push_back(point_vector {pt_x,pt_y,0,0});
       }
     } //End matrix generation
 
@@ -341,15 +395,19 @@ void ChemotaxisWorld::runWorldSolo(std::shared_ptr<Organism> org, bool analyse, 
       pos_hist.push_back(pos_vec);
     }
     else {
-      pos_vec = run(pos_vec);
+      pos_vec = (use_matrix) ? check_collision(pos_vec, matrix_vec, radius) : run(pos_vec);
       pos_vec.theta = rot_diffuse(pos_vec.theta, rot_diff_coeff);
       pos_hist.push_back(pos_vec);
+    }
+    if (pos_vec.x > (speed*eval_ticks) || pos_vec.y > (speed*eval_ticks)){
+      std::cout << "Went farther than possible. Bug somewhere." << "\n";
+      std::cout << "Pos vec:" << pos_vec.x << "," << pos_vec.y << "," << pos_vec.theta << "," << pos_vec.magnitude << std::endl;
     }
   }//end eval loop
 
   //Finished simulating the organism, so score based on x movement and record some stats.
   //Pick an eval method. Look at TestWorld and BerryWorld to get an idea of how
-  //the dataMaps work. It's what I had to do!
+  //the dataMaps work.
   if (point_source) {
     org->score = std::accumulate(concentration_hist.cbegin(), concentration_hist.cend(), 0.0);
     org->dataMap.Append("concentration_sum", \

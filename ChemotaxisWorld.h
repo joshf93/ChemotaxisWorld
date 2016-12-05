@@ -34,6 +34,8 @@ public:
   static std::shared_ptr<ParameterLink<double>> variability_rot_diff_pl;
   static std::shared_ptr<ParameterLink<double>> spot_x_pl;
   static std::shared_ptr<ParameterLink<double>> spot_y_pl;
+  static std::shared_ptr<ParameterLink<double>> radius_pl;
+  static std::shared_ptr<ParameterLink<int>> num_points_pl;
   static std::shared_ptr<ParameterLink<int>> eval_ticks_pl;
   static std::shared_ptr<ParameterLink<int>> brain_updates_pl;
 
@@ -43,6 +45,7 @@ public:
   bool environment_variability;
   bool use_bit_sensor;
   bool point_source;
+  bool use_matrix;
   double rot_diff_coeff;
   double speed;
   double slope; //Slope is "m" if linear, "k" if exponential.
@@ -52,6 +55,8 @@ public:
   double variability_rot_diff;
   double spot_x;
   double spot_y;
+  double radius;
+  int num_points;
   int eval_ticks;
   int brain_updates;
 
